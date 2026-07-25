@@ -1,12 +1,90 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="zh-HK">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>My GitHub Page</title>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>竹園開出巴士時間</title>
+  <style>
+    body { font-family: 'Segoe UI', Tahoma, Geneva, sans-serif; max-width: 500px; margin: 0 auto; padding: 20px; background: #f5f5f5; }
+    h2 { text-align: center; color: #333; margin-bottom: 20px; }
+    .card { background: #fff; padding: 15px; margin-bottom: 15px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+    .route { font-size: 22px; font-weight: bold; color: #E3002B; }
+    .dest { font-size: 16px; color: #666; margin-left: 8px; }
+    .times { margin-top: 12px; }
+    .badge { background: #f0f0f0; padding: 6px 12px; border-radius: 6px; margin: 0 8px 8px 0; display: inline-block; font-size: 15px; color: #333; }
+    .badge.soon { background: #ffebee; color: #E3002B; font-weight: bold; }
+  </style>
 </head>
 <body>
-    <h1>Hello, World!</h1>
-    <p>My static webpage is live on GitHub Pages.</p>
+
+  <h2>🚌 竹園開出巴士實時時間</h2>
+  <div id="content">連線中，請稍候...</div>
+
+  <script>
+    async function fetchETA() {
+      const content = document.getElementById('content');
+      try {
+        // 1. 取得九巴所有車站，尋找竹園邨巴士總站
+        const stopRes = await fetch('https://data.etabus.gov.hk/v1/transport/kmb/stop');
+        const stopData = await stopRes.json();
+        const chukYuen = stopData.data.find(s => s.name_tc === '竹園邨巴士總站');
+        
+        if (!chukYuen) {
+          content.innerHTML = '搵唔到竹園車站資料。';
+          return;
+        }
+
+        // 2. 根據車站 ID 查詢實時到站時間
+        const etaRes = await fetch(`https://data.etabus.gov.hk/v1/transport/kmb/stop-eta/${chukYuen.stop}`);
+        const etaData = await etaRes.json();
+
+        // 3. 過濾資料：只顯示「由竹園開出」的班次 (seq === 1 代表起點站)，並過濾空時間
+        const departures = etaData.data.filter(e => e.seq === 1 && e.eta);
+
+        if (departures.length === 0) {
+          content.innerHTML = '暫時冇巴士時間提供。';
+          return;
+        }
+
+        // 4. 將數據按路線進行分組
+        const routes = {};
+        departures.forEach(e => {
+          if (!routes[e.route]) routes[e.route] = { dest: e.dest_tc, etas: [] };
+          routes[e.route].etas.push(e.eta);
+        });
+
+        // 5. 渲染 HTML 內容
+        let html = '';
+        for (const [route, info] of Object.entries(routes)) {
+          // 整理時間並排序
+          const times = info.etas
+            .map(t => new Date(t))
+            .sort((a, b) => a - b)
+            .map(t => {
+              const diffMins = Math.floor((t - new Date()) / 60000);
+              if (diffMins <= 0) return '<span class="badge soon">即將到達</span>';
+              return `<span class="badge">${diffMins} 分鐘</span>`;
+            });
+            
+          // 移除重複時間並轉換為字串
+          const uniqueTimes = [...new Set(times)].join('');
+          
+          html += `
+            <div class="card">
+              <div><span class="route">${route}</span> <span class="dest">往 ${info.dest}</span></div>
+              <div class="times">${uniqueTimes || '<span class="badge">沒有資料</span>'}</div>
+            </div>
+          `;
+        }
+        content.innerHTML = html;
+      } catch (error) {
+        content.innerHTML = '獲取數據失敗，請檢查網絡連線或稍後再試。';
+      }
+    }
+
+    fetchETA();
+    // 每 60 秒自動更新一次
+    setInterval(fetchETA, 60000);
+  </script>
 </body>
 </html>
