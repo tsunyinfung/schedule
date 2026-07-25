@@ -1,90 +1,168 @@
 <!DOCTYPE html>
 <html lang="zh-HK">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>竹園開出巴士時間</title>
-  <style>
-    body { font-family: 'Segoe UI', Tahoma, Geneva, sans-serif; max-width: 500px; margin: 0 auto; padding: 20px; background: #f5f5f5; }
-    h2 { text-align: center; color: #333; margin-bottom: 20px; }
-    .card { background: #fff; padding: 15px; margin-bottom: 15px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
-    .route { font-size: 22px; font-weight: bold; color: #E3002B; }
-    .dest { font-size: 16px; color: #666; margin-left: 8px; }
-    .times { margin-top: 12px; }
-    .badge { background: #f0f0f0; padding: 6px 12px; border-radius: 6px; margin: 0 8px 8px 0; display: inline-block; font-size: 15px; color: #333; }
-    .badge.soon { background: #ffebee; color: #E3002B; font-weight: bold; }
-  </style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>竹園總站巴士實時倒數</title>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #f0f2f5; padding: 20px; color: #333; display: flex; justify-content: center; align-items: center; min-height: 90vh; margin: 0; }
+        .card { background: #fff; width: 100%; max-width: 420px; padding: 24px; border-radius: 16px; box-shadow: 0 4px 16px rgba(0,0,0,0.1); border-top: 6px solid #007bff; }
+        h2 { margin: 0 0 5px 0; color: #007bff; font-size: 22px; text-align: center; }
+        .sub { color: #666; font-size: 14px; margin-bottom: 20px; text-align: center; }
+        .eta-box { font-size: 15px; font-weight: bold; margin: 12px 0; padding: 10px 12px; background: #f8f9fa; border-radius: 8px; }
+        .route-title { color: #333; font-size: 16px; margin-bottom: 6px; display: block; border-bottom: 1px solid #dee2e6; padding-bottom: 4px; }
+        .time-line { color: #333; font-size: 15px; margin-top: 4px; display: block; font-weight: normal; }
+        .btn { display: block; width: 100%; background: #007bff; color: white; border: none; padding: 12px; font-size: 16px; border-radius: 8px; cursor: pointer; font-weight: bold; margin-top: 15px; }
+        .btn:hover { background: #0056b3; }
+    </style>
 </head>
 <body>
 
-  <h2>🚌 竹園!開出巴士實時時間</h2>
-  <div id="content">連線中，請稍候...</div>
+<div class="card">
+    <h2>🚌 竹園總站開出</h2>
+    <div class="sub">實時分秒倒數 (每10秒更新)</div>
+    
+    <div class="eta-box">
+        <span class="route-title">路線 1 (往 尖沙咀碼頭)</span>
+        <div id="eta1">載入中...</div>
+    </div>
 
-  <script>
-    async function fetchETA() {
-      const content = document.getElementById('content');
-      try {
-        // 1. 取得九巴所有車站，尋找竹園邨巴士總站
-        const stopRes = await fetch('https://data.etabus.gov.hk/v1/transport/kmb/stop');
-        const stopData = await stopRes.json();
-        const chukYuen = stopData.data.find(s => s.name_tc === '竹園邨巴士總站');
-        
-        if (!chukYuen) {
-          content.innerHTML = '搵唔到竹園車站資料。';
-          return;
+    <div class="eta-box">
+        <span class="route-title">路線 2B (往 長沙灣)</span>
+        <div id="eta2b">載入中...</div>
+    </div>
+
+    <div class="eta-box">
+        <span class="route-title">路線 11C (往 上秀茂坪)</span>
+        <div id="eta11c">載入中...</div>
+    </div>
+
+    <div class="eta-box">
+        <span class="route-title">路線 11K (往 紅磡站)</span>
+        <div id="eta11k">載入中...</div>
+    </div>
+
+    <div class="eta-box">
+        <span class="route-title">路線 103 (往 蒲飛路)</span>
+        <div id="eta103">載入中...</div>
+    </div>
+
+    <button class="btn" onclick="fetchAllData()">🔄 立即更新</button>
+</div>
+
+<script>
+const routesConfig = [
+    { route: '1', elementId: 'eta1' },
+    { route: '2B', elementId: 'eta2b' },
+    { route: '11C', elementId: 'eta11c' },
+    { route: '11K', elementId: 'eta11k' },
+    { route: '103', elementId: 'eta103' }
+];
+
+let rawDataCache = {};
+let countdownTimer = null;
+
+async function fetchAllData() {
+    routesConfig.forEach(rc => {
+        const el = document.getElementById(rc.elementId);
+        if (el.innerText === "載入中...") {
+            el.style.color = "#666";
         }
+    });
 
-        // 2. 根據車站 ID 查詢實時到站時間
-        const etaRes = await fetch(`https://data.etabus.gov.hk/v1/transport/kmb/stop-eta/${chukYuen.stop}`);
-        const etaData = await etaRes.json();
+    await Promise.all(routesConfig.map(rc => fetchRouteData(rc.route, rc.elementId)));
 
-        // 3. 過濾資料：只顯示「由竹園開出」的班次 (seq === 1 代表起點站)，並過濾空時間
-        const departures = etaData.data.filter(e => e.seq === 1 && e.eta);
+    if (countdownTimer) clearInterval(countdownTimer);
+    countdownTimer = setInterval(updateAllCountdowns, 1000);
+}
 
-        if (departures.length === 0) {
-          content.innerHTML = '暫時冇巴士時間提供。';
-          return;
+async function fetchRouteData(routeNo, elementId) {
+    const el = document.getElementById(elementId);
+    try {
+        const response = await fetch(`https://data.etabus.gov.hk/v1/transport/kmb/route-eta/${routeNo}/1`);
+        const json = await response.json();
+
+        if (json.data && json.data.length > 0) {
+            const etas = json.data.filter(e => e.seq === 1 && e.dir === "O" && e.service_type === 1);
+            rawDataCache[routeNo] = etas;
+            updateElement(el, etas);
+        } else {
+            rawDataCache[routeNo] = [];
+            el.style.color = "#888";
+            el.innerText = "暫無實時班次";
         }
+    } catch (error) {
+        rawDataCache[routeNo] = [];
+        el.style.color = "#d9534f";
+        el.innerText = "連線失敗";
+    }
+}
 
-        // 4. 將數據按路線進行分組
-        const routes = {};
-        departures.forEach(e => {
-          if (!routes[e.route]) routes[e.route] = { dest: e.dest_tc, etas: [] };
-          routes[e.route].etas.push(e.eta);
-        });
-
-        // 5. 渲染 HTML 內容
-        let html = '';
-        for (const [route, info] of Object.entries(routes)) {
-          // 整理時間並排序
-          const times = info.etas
-            .map(t => new Date(t))
-            .sort((a, b) => a - b)
-            .map(t => {
-              const diffMins = Math.floor((t - new Date()) / 60000);
-              if (diffMins <= 0) return '<span class="badge soon">即將到達</span>';
-              return `<span class="badge">${diffMins} 分鐘</span>`;
-            });
-            
-          // 移除重複時間並轉換為字串
-          const uniqueTimes = [...new Set(times)].join('');
-          
-          html += `
-            <div class="card">
-              <div><span class="route">${route}</span> <span class="dest">往 ${info.dest}</span></div>
-              <div class="times">${uniqueTimes || '<span class="badge">沒有資料</span>'}</div>
-            </div>
-          `;
-        }
-        content.innerHTML = html;
-      } catch (error) {
-        content.innerHTML = '獲取數據失敗，請檢查網絡連線或稍後再試。';
-      }
+function updateElement(el, etas) {
+    if (!etas || etas.length === 0) {
+        el.style.color = "#888";
+        el.innerText = "暫無實時班次";
+        return;
     }
 
-    fetchETA();
-    // 每 60 秒自動更新一次
-    setInterval(fetchETA, 60000);
-  </script>
+    el.style.color = "#333";
+    let htmlOutput = "";
+
+    etas.forEach((e, index) => {
+        let timeStr = "";
+        let clockStr = "";
+
+        if (!e.eta) {
+            timeStr = e.rmk_tc ? e.rmk_tc : "暫無班次";
+        } else {
+            const now = new Date();
+            const etaDate = new Date(e.eta);
+            const diffMs = etaDate - now;
+
+            // 格式化 XX:XX am/pm
+            let hours = etaDate.getHours();
+            const minutes = etaDate.getMinutes();
+            const ampm = hours >= 12 ? 'pm' : 'am';
+            hours = hours % 12;
+            hours = hours ? hours : 12; // the hour '0' should be '12'
+            const minutesFormatted = minutes < 10 ? '0' + minutes : minutes;
+            clockStr = `${hours}:${minutesFormatted} ${ampm}`;
+
+            if (diffMs <= 0) {
+                timeStr = "將至";
+            } else {
+                const totalSecs = Math.floor(diffMs / 1000);
+                const mins = Math.floor(totalSecs / 60);
+                const secs = totalSecs % 60;
+                timeStr = `${mins} 分 ${secs} 秒`;
+            }
+        }
+
+        if (clockStr) {
+            htmlOutput += `<span class="time-line">第 ${index + 1} 班: <strong style="color: #d9534f;">${timeStr}</strong> (${clockStr})</span>`;
+        } else {
+            htmlOutput += `<span class="time-line">第 ${index + 1} 班: <strong style="color: #d9534f;">${timeStr}</strong></span>`;
+        }
+    });
+
+    el.innerHTML = htmlOutput;
+}
+
+function updateAllCountdowns() {
+    routesConfig.forEach(rc => {
+        const el = document.getElementById(rc.elementId);
+        if (rawDataCache[rc.route]) {
+            updateElement(el, rawDataCache[rc.route]);
+        }
+    });
+}
+
+// 網頁載入時執行
+fetchAllData();
+
+// 每 10 秒向伺服器更新一次最新數據
+setInterval(fetchAllData, 10000);
+</script>
+
 </body>
 </html>
